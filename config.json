@@ -1,0 +1,27 @@
+{
+  "watch_dir": "$HOME/Downloads",
+  "log_file": "$HOME/.smart_sorter.log",
+
+  "dry_run": false,
+  "overwrite": false,
+
+  "scan_interval_seconds": 10,
+  "file_stable_seconds": 12,
+
+  "log_enabled": true,
+  "notify_enabled": true,
+
+  "usb_gcode": "/run/media/$USER/3DPrinter",
+
+  "paths": {
+    "pictures": "$HOME/Pictures",
+    "videos": "$HOME/Videos",
+    "music": "$HOME/Music",
+    "models3d": "$HOME/Models3D",
+    "gcode": "$HOME/Gcode",
+    "archives": "$HOME/Archives",
+    "docs": "$HOME/Documents",
+    "apps": "$HOME/Applications",
+    "misc": "$HOME/Misc"
+  }
+}

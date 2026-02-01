@@ -1,0 +1,9 @@
+# Local / editor
+.DS_Store
+
+# Optional local overrides
+config.local.json
+
+# Shell / temp
+*.swp
+*~
