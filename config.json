@@ -14,13 +14,13 @@
   "usb_gcode": "/run/media/$USER/3DPrinter",
 
   "paths": {
-    "pictures": "$HOME/Pictures",
-    "videos": "$HOME/Videos",
-    "music": "$HOME/Music",
+    "pictures": "/home/altariox/Pictures",
+    "videos": "/home/altariox/Videos",
+    "music": "/home/altariox/Music",
     "models3d": "$HOME/Models3D",
-    "gcode": "$HOME/Gcode",
+    "gcode": "/home/altariox/Downloads/gcode",
     "archives": "$HOME/Archives",
-    "docs": "$HOME/Documents",
+    "docs": "/home/altariox/Downloads/ODT",
     "apps": "$HOME/Applications",
     "misc": "$HOME/Misc"
   }

@@ -34,7 +34,6 @@ DIR_MISC="$HOME/Misc"
 ### ===== Fonctions utilitaires =====
 
 expand_path() {
-    # Expansion safe sans eval: ~, $HOME, ${HOME}
     local p="$1"
     if [[ "$p" == "~" || "$p" == "~/"* ]]; then
         p="$HOME${p:1}"
@@ -51,8 +50,6 @@ load_config_json() {
         return 0
     }
 
-    # Charge le JSON et sort des assignations bash sûres (quotées)
-    # shellcheck disable=SC1090
     source <(
         python3 - "$CONFIG_FILE" <<'PY'
 import json, shlex, sys
@@ -95,7 +92,6 @@ emit('DIR_MISC', paths.get('misc'))
 PY
     )
 
-    # Expand les chemins après chargement
     WATCH_DIR="$(expand_path "$WATCH_DIR")"
     LOG_FILE="$(expand_path "$LOG_FILE")"
     USB_GCODE="$(expand_path "$USB_GCODE")"
@@ -169,12 +165,10 @@ notify() {
 
 sanitize_name() {
     local name="$1"
-    # fast-path: déjà safe
     if [[ "$name" =~ ^[[:alnum:]._-]+$ ]]; then
         echo "$name"
         return 0
     fi
-    # supprimer caractères spéciaux, emojis et espace multiple
     name=$(echo "$name" | iconv -f UTF-8 -t ASCII//TRANSLIT | tr -cd '[:alnum:]._-')
     echo "$name"
 }
@@ -182,13 +176,10 @@ sanitize_name() {
 safe_move() {
     local src="$1"
     local dst="$2"
-
-    # détecte doublon sans hash (cmp + taille)
     if [[ -f "$dst" ]]; then
         local src_size dst_size
         src_size=$(stat -c %s -- "$src" 2>/dev/null) || src_size=""
         dst_size=$(stat -c %s -- "$dst" 2>/dev/null) || dst_size=""
-
         if [[ -n "$src_size" && -n "$dst_size" && "$src_size" == "$dst_size" ]] && cmp -s -- "$src" "$dst"; then
             log "Doublon détecté, suppression → $src"
             run_cmd rm -f "$src"
@@ -198,76 +189,74 @@ safe_move() {
             return
         fi
     fi
-
     mkdir -p "$(dirname "$dst")"
     run_cmd mv -f "$src" "$dst"
 }
 
+### ===== Conversions sécurisées =====
+
 convert_image() {
     local f="$1"
     local base="$(sanitize_name "$(basename "${f%.*}")")"
-    local out="$DIR_PICTURES/$base.jpg"
-    local out_existed=false
-    [[ -e "$out" ]] && out_existed=true
+    local tmp="$(mktemp --suffix=.png)"
+    local out="$DIR_PICTURES/$base.png"
 
-    if run_cmd magick "$f" "$out"; then
+    if magick "$f" "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+        mkdir -p "$DIR_PICTURES"
+        run_cmd mv -f "$tmp" "$out"
         run_cmd rm -f "$f"
         notify "Image convertie → $out"
     else
-        log "Conversion image échouée, fichier conservé → $f"
-        if [[ "$out_existed" = false && -f "$out" ]]; then
-            run_cmd rm -f "$out"
-        fi
-        # fallback : classer sans conversion pour éviter de le retenter en boucle
-        safe_move "$f" "$DIR_PICTURES/$(sanitize_name "$(basename "$f")")"
+        log "Image non convertible → déplacement simple"
+        rm -f "$tmp"
+        safe_move "$f" "$DIR_PICTURES/$base.${f##*.}"
     fi
 }
 
 convert_audio() {
     local f="$1"
     local base="$(sanitize_name "$(basename "${f%.*}")")"
+    local tmp="$(mktemp --suffix=.mp3)"
     local out="$DIR_MUSIC/$base.mp3"
-    local out_existed=false
-    [[ -e "$out" ]] && out_existed=true
 
-    if run_quiet_cmd ffmpeg -y -i "$f" -ab 320k "$out"; then
+    if ffmpeg -y -i "$f" -ab 320k "$tmp" >/dev/null 2>&1 && [[ -s "$tmp" ]]; then
+        mkdir -p "$DIR_MUSIC"
+        run_cmd mv -f "$tmp" "$out"
         run_cmd rm -f "$f"
         notify "Audio converti → $out"
     else
-        log "Conversion audio échouée, fichier conservé → $f"
-        if [[ "$out_existed" = false && -f "$out" ]]; then
-            run_cmd rm -f "$out"
-        fi
-        safe_move "$f" "$DIR_MUSIC/$(sanitize_name "$(basename "$f")")"
+        log "Audio non convertible → déplacement simple"
+        rm -f "$tmp"
+        safe_move "$f" "$DIR_MUSIC/$base.${f##*.}"
     fi
 }
 
 convert_video() {
     local f="$1"
     local base="$(sanitize_name "$(basename "${f%.*}")")"
+    local tmp="$(mktemp --suffix=.mp4)"
     local out="$DIR_VIDEOS/$base.mp4"
-    local out_existed=false
-    [[ -e "$out" ]] && out_existed=true
 
-    if run_quiet_cmd ffmpeg -y -i "$f" -c:v libx264 -preset slow -crf 22 -c:a aac "$out"; then
+    if ffmpeg -y -i "$f" -c:v libx264 -preset slow -crf 22 -c:a aac "$tmp" >/dev/null 2>&1 && [[ -s "$tmp" ]]; then
+        mkdir -p "$DIR_VIDEOS"
+        run_cmd mv -f "$tmp" "$out"
         run_cmd rm -f "$f"
         notify "Vidéo convertie → $out"
     else
-        log "Conversion vidéo échouée, fichier conservé → $f"
-        if [[ "$out_existed" = false && -f "$out" ]]; then
-            run_cmd rm -f "$out"
-        fi
-        safe_move "$f" "$DIR_VIDEOS/$(sanitize_name "$(basename "$f")")"
+        log "Vidéo non convertible → déplacement simple"
+        rm -f "$tmp"
+        safe_move "$f" "$DIR_VIDEOS/$base.${f##*.}"
     fi
 }
+
+### ===== Traitement fichiers =====
 
 process_file() {
     local file="$1"
     [[ ! -f "$file" ]] && return
 
     local ext="${file##*.}"
-    ext="${ext,,}"  # minuscule
-
+    ext="${ext,,}"
     local base_name safe_name
     base_name="$(basename -- "$file")"
     safe_name="$(sanitize_name "$base_name")"
@@ -275,10 +264,10 @@ process_file() {
     log "Traitement: $file"
 
     case "$ext" in
-        png|jpeg|webp|bmp|tiff)
+        png|jpeg|webp|jpg|svg|bmp|tiff)
             convert_image "$file"
             ;;
-        jpg)
+        png)
             safe_move "$file" "$DIR_PICTURES/$safe_name"
             ;;
         wav|flac|ogg|m4a)
@@ -299,7 +288,6 @@ process_file() {
         gcode|gc)
             local gcode_dst="$DIR_GCODE/$safe_name"
             safe_move "$file" "$gcode_dst"
-            # si USB branché, copier pour l'imprimante
             if [[ -d "$USB_GCODE" ]]; then
                 run_cmd cp -u "$gcode_dst" "$USB_GCODE/"
                 notify "Gcode copié vers imprimante → $USB_GCODE"
@@ -322,10 +310,6 @@ process_file() {
 }
 
 scan_watch_dir() {
-    # Scan “fallback” pour les évènements inotify manqués.
-    # On évite les fichiers temporaires de téléchargement et on ne traite
-    # que les fichiers qui n'ont pas été modifiés récemment (réduit les erreurs
-    # sur fichiers encore en cours d'écriture).
     compgen -G "$WATCH_DIR/*" >/dev/null 2>&1 || return 0
 
     local now mtime
@@ -337,7 +321,6 @@ scan_watch_dir() {
         case "$f" in
             *.part|*.crdownload|*.tmp) continue ;;
         esac
-
         mtime=$(stat -c %Y -- "$f" 2>/dev/null) || continue
         (( now - mtime < FILE_STABLE_SECONDS )) && continue
         process_file "$f"
@@ -357,7 +340,6 @@ fi
 log "Surveillance de $WATCH_DIR"
 notify "SmartSorter actif dans $WATCH_DIR"
 
-# Scan périodique toutes les 10 secondes (fallback si inotify rate un évènement)
 (
     while true; do
         sleep "$SCAN_INTERVAL"
